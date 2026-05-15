@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>NINO TERMINAL</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background: #0b0e11; color: #eaecef; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+        #signals { height: 25vh; overflow-y: auto; background: #161a1e; border-bottom: 1px solid #2b2f36; }
+        .chart-container { flex-grow: 1; position: relative; }
+        .signal-card { border-left: 4px solid #f0b90b; background: #1e2329; margin: 8px; padding: 12px; border-radius: 4px; border: 1px solid #2b2f36; }
+    </style>
+</head>
+<body>
+    <div id="signals">
+        <div class="p-6 text-center text-gray-500 text-[10px] uppercase tracking-widest animate-pulse">
+            Scanning Institutional Flow...
+        </div>
+    </div>
+
+    <div class="chart-container">
+        <div id="tv_chart" style="height:100%; width:100%;"></div>
+        <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+        <script type="text/javascript">
+            new TradingView.widget({
+                "autosize": true,
+                "symbol": "BINANCE:BTCUSDT",
+                "interval": "1",
+                "timezone": "Asia/Kolkata",
+                "theme": "dark",
+                "style": "1",
+                "locale": "en",
+                "enable_publishing": false,
+                "hide_side_toolbar": false,
+                "allow_symbol_change": true,
+                "container_id": "tv_chart"
+            });
+        </script>
+    </div>
+
+    <script>
+        const pairs = ['btcusdt', 'solusdt', 'ethusdt'];
+        const sigDiv = document.getElementById('signals');
+        pairs.forEach(p => {
+            const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${p}@kline_1m`);
+            ws.onmessage = (e) => {
+                const k = JSON.parse(e.data).k;
+                if (k.x && Math.abs(k.c - k.o) > (k.o * 0.0018)) {
+                    if(sigDiv.innerHTML.includes('Scanning')) sigDiv.innerHTML = '';
+                    const color = k.c > k.o ? 'text-green-400' : 'text-red-400';
+                    const html = `<div class="signal-card">
+                        <div class="flex justify-between font-bold text-xs">
+                            <span>${p.toUpperCase()}</span>
+                            <span class="${color}">SMC ALERT</span>
+                        </div>
+                        <div class="text-[10px] mt-1 opacity-70 italic">Displacement at $${parseFloat(k.c).toLocaleString()}</div>
+                    </div>`;
+                    sigDiv.insertAdjacentHTML('afterbegin', html);
+                }
+            };
+        });
+    </script>
+</body>
+</html>
