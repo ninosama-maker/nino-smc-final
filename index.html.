@@ -3,20 +3,35 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>NINO TERMINAL</title>
+    <title>NINO REAL-TIME TERMINAL</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background: #0b0e11; color: #eaecef; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
-        #signals { height: 25vh; overflow-y: auto; background: #161a1e; border-bottom: 1px solid #2b2f36; }
-        .chart-container { flex-grow: 1; position: relative; }
-        .signal-card { border-left: 4px solid #f0b90b; background: #1e2329; margin: 8px; padding: 12px; border-radius: 4px; border: 1px solid #2b2f36; }
+        body { background: #0b0e11; color: #eaecef; overflow: hidden; height: 100vh; display: flex; flex-direction: column; font-family: 'Inter', sans-serif; }
+        .ticker-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: #2b2f36; }
+        .price-up { color: #0ecb81; }
+        .price-down { color: #f6465d; }
+        #signals { height: 20vh; overflow-y: auto; background: #161a1e; }
+        .chart-container { flex-grow: 1; border-top: 2px solid #2b2f36; }
     </style>
 </head>
 <body>
-    <div id="signals">
-        <div class="p-6 text-center text-gray-500 text-[10px] uppercase tracking-widest animate-pulse">
-            Scanning Institutional Flow...
+    <div class="ticker-grid border-b border-gray-800">
+        <div class="bg-[#161a1e] p-3 text-center">
+            <div class="text-[10px] text-gray-500 font-bold uppercase">BTC/USDT</div>
+            <div id="price-btcusdt" class="text-lg font-mono font-black tracking-tighter">0.00</div>
         </div>
+        <div class="bg-[#161a1e] p-3 text-center">
+            <div class="text-[10px] text-gray-500 font-bold uppercase">ETH/USDT</div>
+            <div id="price-ethusdt" class="text-lg font-mono font-black tracking-tighter">0.00</div>
+        </div>
+        <div class="bg-[#161a1e] p-3 text-center">
+            <div class="text-[10px] text-gray-500 font-bold uppercase">SOL/USDT</div>
+            <div id="price-solusdt" class="text-lg font-mono font-black tracking-tighter">0.00</div>
+        </div>
+    </div>
+
+    <div id="signals" class="p-2 space-y-2">
+        <div class="text-center py-4 text-gray-600 text-[10px] font-bold uppercase tracking-[0.2em] animate-pulse">Monitoring Smart Money Displacement...</div>
     </div>
 
     <div class="chart-container">
@@ -27,36 +42,60 @@
                 "autosize": true,
                 "symbol": "BINANCE:BTCUSDT",
                 "interval": "1",
-                "timezone": "Asia/Kolkata",
                 "theme": "dark",
                 "style": "1",
                 "locale": "en",
                 "enable_publishing": false,
-                "hide_side_toolbar": false,
                 "allow_symbol_change": true,
-                "container_id": "tv_chart"
+                "container_id": "tv_chart",
+                "timezone": "Asia/Kolkata"
             });
         </script>
     </div>
 
     <script>
-        const pairs = ['btcusdt', 'solusdt', 'ethusdt'];
-        const sigDiv = document.getElementById('signals');
-        pairs.forEach(p => {
-            const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${p}@kline_1m`);
-            ws.onmessage = (e) => {
+        const symbols = ['btcusdt', 'ethusdt', 'solusdt'];
+        let lastPrices = {};
+
+        symbols.forEach(s => {
+            // Live Ticker Stream (Mini-ticker for instant speed)
+            const tickerWs = new WebSocket(`wss://stream.binance.com:9443/ws/${s}@ticker`);
+            const priceEl = document.getElementById(`price-${s}`);
+
+            tickerWs.onmessage = (e) => {
+                const data = JSON.parse(e.data);
+                const price = parseFloat(data.c).toFixed(s === 'btcusdt' ? 2 : 3);
+                
+                // Visual smooth transition
+                if (lastPrices[s]) {
+                    priceEl.className = price > lastPrices[s] ? 'text-lg font-mono font-black tracking-tighter price-up' : 'text-lg font-mono font-black tracking-tighter price-down';
+                }
+                priceEl.innerText = price;
+                lastPrices[s] = price;
+            };
+
+            // SMC Signal Stream (1m Kline for displacement logic)
+            const signalWs = new WebSocket(`wss://stream.binance.com:9443/ws/${s}@kline_1m`);
+            signalWs.onmessage = (e) => {
                 const k = JSON.parse(e.data).k;
-                if (k.x && Math.abs(k.c - k.o) > (k.o * 0.0018)) {
-                    if(sigDiv.innerHTML.includes('Scanning')) sigDiv.innerHTML = '';
-                    const color = k.c > k.o ? 'text-green-400' : 'text-red-400';
-                    const html = `<div class="signal-card">
-                        <div class="flex justify-between font-bold text-xs">
-                            <span>${p.toUpperCase()}</span>
-                            <span class="${color}">SMC ALERT</span>
+                const displacement = Math.abs(k.c - k.o) / k.o;
+                
+                // 0.18% displacement filter for scalping
+                if (k.x && displacement > 0.0018) {
+                    const sigDiv = document.getElementById('signals');
+                    if(sigDiv.innerText.includes('Monitoring')) sigDiv.innerHTML = '';
+                    
+                    const side = k.c > k.o ? 'BULLISH MSS' : 'BEARISH MSS';
+                    const color = k.c > k.o ? 'text-green-400 border-green-900/50' : 'text-red-400 border-red-900/50';
+                    
+                    const card = `<div class="bg-[#1e2329] border ${color} p-3 rounded text-[11px] font-bold shadow-xl">
+                        <div class="flex justify-between">
+                            <span>${s.toUpperCase()}</span>
+                            <span class="opacity-50">1M</span>
                         </div>
-                        <div class="text-[10px] mt-1 opacity-70 italic">Displacement at $${parseFloat(k.c).toLocaleString()}</div>
+                        <div class="mt-1">${side} DETECTED @ $${parseFloat(k.c).toLocaleString()}</div>
                     </div>`;
-                    sigDiv.insertAdjacentHTML('afterbegin', html);
+                    sigDiv.insertAdjacentHTML('afterbegin', card);
                 }
             };
         });
